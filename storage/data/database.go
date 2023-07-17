@@ -139,6 +139,15 @@ type Feedback struct {
 	Comment     string    `gorm:"column:comment" mapsstructure:"comment"`
 }
 
+// UserSessionFeedback stores read feedback.
+type UserSessionFeedback struct {
+	UserId       string    `gorm:"column:user_id" mapstructure:"user_id"`
+	ItemId       string    `gorm:"column:item_id" mapstructure:"item_id"`
+	SessionId    string    `gorm:"column:session_id" mapstructure:"session_id"`
+	FeedbackType string    `gorm:"column:feedback_type" mapstructure:"feedback_type"`
+	Timestamp    time.Time `gorm:"column:time_stamp" mapsstructure:"timestamp"`
+}
+
 // SortFeedbacks sorts feedback from latest to oldest.
 func SortFeedbacks(feedback []Feedback) {
 	sort.Sort(feedbackSorter(feedback))
@@ -176,6 +185,7 @@ type Database interface {
 	ModifyUser(ctx context.Context, userId string, patch UserPatch) error
 	GetUsers(ctx context.Context, cursor string, n int) (string, []User, error)
 	GetUserFeedback(ctx context.Context, userId string, endTime *time.Time, feedbackTypes ...string) ([]Feedback, error)
+	GetUserFeedbackWithSession(ctx context.Context, userId string, sessionId string, endTime *time.Time, feedbackTypes ...string) ([]Feedback, error)
 	GetUserItemFeedback(ctx context.Context, userId, itemId string, feedbackTypes ...string) ([]Feedback, error)
 	DeleteUserItemFeedback(ctx context.Context, userId, itemId string, feedbackTypes ...string) (int, error)
 	BatchInsertFeedback(ctx context.Context, feedback []Feedback, insertUser, insertItem, overwrite bool) error

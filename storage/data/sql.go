@@ -118,7 +118,14 @@ func (d *SQLDatabase) Init() error {
 			Timestamp    time.Time `gorm:"column:time_stamp;type:datetime;not null"`
 			Comment      string    `gorm:"column:comment;type:text;not null"`
 		}
-		err := d.gormDB.Set("gorm:table_options", "ENGINE=InnoDB").AutoMigrate(Users{}, Items{}, Feedback{})
+		type ReadFeedback struct {
+			UserId       string    `gorm:"column:user_id;type:varchar(256);not null;primaryKey;index:user_id_index"`
+			ItemId       string    `gorm:"column:item_id;type:varchar(256);not null;primaryKey;index:item_id_index"`
+			SessionId    string    `gorm:"column:session_id;type:varchar(256);not null;primaryKey;index:session_id_index"`
+			FeedbackType string    `gorm:"column:feedback_type;type:varchar(256);not null"`
+			Timestamp    time.Time `gorm:"column:time_stamp;type:datetime;not null"`
+		}
+		err := d.gormDB.Set("gorm:table_options", "ENGINE=InnoDB").AutoMigrate(Users{}, Items{}, Feedback{}, ReadFeedback{})
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -145,7 +152,14 @@ func (d *SQLDatabase) Init() error {
 			Timestamp    time.Time `gorm:"column:time_stamp;type:timestamptz;not null"`
 			Comment      string    `gorm:"column:comment;type:text;not null;default:''"`
 		}
-		err := d.gormDB.AutoMigrate(Users{}, Items{}, Feedback{})
+		type ReadFeedback struct {
+			UserId       string    `gorm:"column:user_id;type:varchar(256);not null;primaryKey;index:user_id_index"`
+			ItemId       string    `gorm:"column:item_id;type:varchar(256);not null;primaryKey;index:item_id_index"`
+			SessionId    string    `gorm:"column:session_id;type:varchar(256);not null;primaryKey;index:session_id_index"`
+			FeedbackType string    `gorm:"column:feedback_type;type:varchar(256);not null"`
+			Timestamp    time.Time `gorm:"column:time_stamp;type:timestamptz;not null"`
+		}
+		err := d.gormDB.AutoMigrate(Users{}, Items{}, Feedback{}, ReadFeedback{})
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -172,7 +186,14 @@ func (d *SQLDatabase) Init() error {
 			Timestamp    string `gorm:"column:time_stamp;type:datetime;not null;default:'0001-01-01'"`
 			Comment      string `gorm:"column:comment;type:text;not null;default:''"`
 		}
-		err := d.gormDB.AutoMigrate(Users{}, Items{}, Feedback{})
+		type ReadFeedback struct {
+			UserId       string `gorm:"column:user_id;type:varchar(256);not null;primaryKey;index:user_id_index"`
+			ItemId       string `gorm:"column:item_id;type:varchar(256);not null;primaryKey;index:item_id_index"`
+			SessionId    string `gorm:"column:session_id;type:varchar(256);not null;primaryKey;index:session_id_index"`
+			FeedbackType string `gorm:"column:feedback_type;type:varchar(256);not null"`
+			Timestamp    string `gorm:"column:time_stamp;type:datetime;not null;default:'0001-01-01'"`
+		}
+		err := d.gormDB.AutoMigrate(Users{}, Items{}, Feedback{}, ReadFeedback{})
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -583,7 +604,37 @@ func (d *SQLDatabase) GetUserFeedback(ctx context.Context, userId string, endTim
 	return feedbacks, nil
 }
 
-// BatchInsertFeedback insert a batch feedback into MySQL.
+// GetUserFeedbackWithSession returns feedback of a user session from MySQL.
+func (d *SQLDatabase) GetUserFeedbackWithSession(ctx context.Context, userId, sessionId string, endTime *time.Time, feedbackTypes ...string) ([]Feedback, error) {
+	if len(sessionId) == 0 {
+		return d.GetUserFeedback(ctx, userId, endTime, feedbackTypes...)
+	}
+	tx := d.gormDB.WithContext(ctx).Table(d.UserSessionFeedbackTable()).
+		Select("user_id, item_id, session_id, feedback_type, time_stamp").
+		Where("user_id = ? AND session_id = ?", userId, sessionId)
+	if endTime != nil {
+		tx.Where("time_stamp <= ?", d.convertTimeZone(endTime))
+	}
+	if len(feedbackTypes) > 0 {
+		tx.Where("feedback_type IN ?", feedbackTypes)
+	}
+	result, err := tx.Rows()
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	feedbacks := make([]Feedback, 0)
+	defer result.Close()
+	for result.Next() {
+		var feedback Feedback
+		if err = d.gormDB.ScanRows(result, &feedback); err != nil {
+			return nil, errors.Trace(err)
+		}
+		feedbacks = append(feedbacks, feedback)
+	}
+	return feedbacks, nil
+}
+
+// BatchInsertFeedback insert a batch feedback into MySQL. TODO
 // If insertUser set, new users will be inserted to user table.
 // If insertItem set, new items will be inserted to item table.
 func (d *SQLDatabase) BatchInsertFeedback(ctx context.Context, feedback []Feedback, insertUser, insertItem, overwrite bool) error {

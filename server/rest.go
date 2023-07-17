@@ -426,6 +426,7 @@ func (s *RestServer) CreateWebService() {
 		Param(ws.QueryParameter("n", "Number of returned recommendations").DataType("integer")).
 		Param(ws.QueryParameter("offset", "Offset of returned recommendations").DataType("integer")).
 		Param(ws.QueryParameter("user-id", "Remove read items of a user").DataType("string")).
+		Param(ws.QueryParameter("session-id", "session ID of the user to get recommendation").DataType("string")).
 		Returns(http.StatusOK, "OK", []cache.Document{}).
 		Writes([]cache.Document{}))
 	ws.Route(ws.GET("/popular/{category}").To(s.getPopular).
@@ -436,6 +437,7 @@ func (s *RestServer) CreateWebService() {
 		Param(ws.QueryParameter("n", "Number of returned items").DataType("integer")).
 		Param(ws.QueryParameter("offset", "Offset of returned items").DataType("integer")).
 		Param(ws.QueryParameter("user-id", "Remove read items of a user").DataType("string")).
+		Param(ws.QueryParameter("session-id", "session ID of the user to get recommendation").DataType("string")).
 		Returns(http.StatusOK, "OK", []cache.Document{}).
 		Writes([]cache.Document{}))
 	// Get latest items
@@ -446,6 +448,7 @@ func (s *RestServer) CreateWebService() {
 		Param(ws.QueryParameter("n", "Number of returned items").DataType("integer")).
 		Param(ws.QueryParameter("offset", "Offset of returned items").DataType("integer")).
 		Param(ws.QueryParameter("user-id", "Remove read items of a user").DataType("string")).
+		Param(ws.QueryParameter("session-id", "session ID of the user to get recommendation").DataType("string")).
 		Returns(http.StatusOK, "OK", []cache.Document{}).
 		Writes([]cache.Document{}))
 	ws.Route(ws.GET("/latest/{category}").To(s.getLatest).
@@ -456,6 +459,7 @@ func (s *RestServer) CreateWebService() {
 		Param(ws.QueryParameter("n", "Number of returned items").DataType("integer")).
 		Param(ws.QueryParameter("offset", "Offset of returned items").DataType("integer")).
 		Param(ws.QueryParameter("user-id", "Remove read items of a user").DataType("string")).
+		Param(ws.QueryParameter("session-id", "session ID of the user to get recommendation").DataType("string")).
 		Returns(http.StatusOK, "OK", []cache.Document{}).
 		Writes([]cache.Document{}))
 	// Get neighbors
@@ -493,6 +497,7 @@ func (s *RestServer) CreateWebService() {
 		Param(ws.HeaderParameter("X-API-Key", "API key").DataType("string")).
 		Param(ws.PathParameter("user-id", "ID of the user to get recommendation").DataType("string")).
 		Param(ws.QueryParameter("category", "Category of the returned items (support multi-categories filtering)").DataType("string")).
+		Param(ws.QueryParameter("session-id", "session ID of the user to get recommendation").DataType("string")).
 		Param(ws.QueryParameter("write-back-type", "Type of write back feedback").DataType("string")).
 		Param(ws.QueryParameter("write-back-delay", "Timestamp delay of write back feedback (format 0h0m0s)").DataType("string")).
 		Param(ws.QueryParameter("n", "Number of returned items").DataType("integer")).
@@ -505,6 +510,7 @@ func (s *RestServer) CreateWebService() {
 		Param(ws.HeaderParameter("X-API-Key", "API key").DataType("string")).
 		Param(ws.PathParameter("user-id", "ID of the user to get recommendation").DataType("string")).
 		Param(ws.PathParameter("category", "Category of the returned items").DataType("string")).
+		Param(ws.QueryParameter("session-id", "session ID of the user to get recommendation").DataType("string")).
 		Param(ws.QueryParameter("write-back-type", "Type of write back feedback").DataType("string")).
 		Param(ws.QueryParameter("write-back-delay", "Timestamp delay of write back feedback (format 0h0m0s)").DataType("string")).
 		Param(ws.QueryParameter("n", "Number of returned items").DataType("integer")).
@@ -563,11 +569,12 @@ func ParseDuration(request *restful.Request, name string) (time.Duration, error)
 
 func (s *RestServer) searchDocuments(collection, subset, category string, isItem bool, request *restful.Request, response *restful.Response) {
 	var (
-		ctx    = request.Request.Context()
-		n      int
-		offset int
-		userId string
-		err    error
+		ctx       = request.Request.Context()
+		n         int
+		offset    int
+		userId    string
+		sessionId string
+		err       error
 	)
 
 	// parse arguments
@@ -580,6 +587,7 @@ func (s *RestServer) searchDocuments(collection, subset, category string, isItem
 		return
 	}
 	userId = request.QueryParameter("user-id")
+	sessionId = request.QueryParameter("session-id")
 
 	// Get the sorted list
 	items, err := s.CacheClient.SearchDocuments(ctx, collection, subset, []string{category}, offset, offset+n)
@@ -590,7 +598,8 @@ func (s *RestServer) searchDocuments(collection, subset, category string, isItem
 
 	// Remove read items
 	if userId != "" {
-		feedback, err := s.DataClient.GetUserFeedback(ctx, userId, s.Config.Now())
+		//feedback, err := s.DataClient.GetUserFeedback(ctx, userId, s.Config.Now())
+		feedback, err := s.DataClient.GetUserFeedbackWithSession(ctx, userId, sessionId, s.Config.Now())
 		if err != nil {
 			InternalServerError(response, err)
 			return
@@ -685,11 +694,11 @@ func (s *RestServer) getCollaborative(request *restful.Request, response *restfu
 // 1. If there are recommendations in cache, return cached recommendations.
 // 2. If there are historical interactions of the users, return similar items.
 // 3. Otherwise, return fallback recommendation (popular/latest).
-func (s *RestServer) Recommend(ctx context.Context, response *restful.Response, userId string, categories []string, n int, recommenders ...Recommender) ([]string, error) {
+func (s *RestServer) Recommend(ctx context.Context, response *restful.Response, userId, sessionId string, categories []string, n int, recommenders ...Recommender) ([]string, error) {
 	initStart := time.Now()
 
 	// create context
-	recommendCtx, err := s.createRecommendContext(ctx, userId, categories, n)
+	recommendCtx, err := s.createRecommendContext(ctx, userId, sessionId, categories, n)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -751,9 +760,10 @@ type recommendContext struct {
 	loadPopularTime    time.Duration
 }
 
-func (s *RestServer) createRecommendContext(ctx context.Context, userId string, categories []string, n int) (*recommendContext, error) {
+func (s *RestServer) createRecommendContext(ctx context.Context, userId, sessionId string, categories []string, n int) (*recommendContext, error) {
 	// pull historical feedback
-	userFeedback, err := s.DataClient.GetUserFeedback(ctx, userId, s.Config.Now())
+	//userFeedback, err := s.DataClient.GetUserFeedback(ctx, userId, s.Config.Now())
+	userFeedback, err := s.DataClient.GetUserFeedbackWithSession(ctx, userId, sessionId, s.Config.Now())
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -951,6 +961,7 @@ func (s *RestServer) getRecommend(request *restful.Request, response *restful.Re
 	}
 	// parse arguments
 	userId := request.PathParameter("user-id")
+	sessionId := request.QueryParameter("session-id")
 	n, err := ParseInt(request, "n", s.Config.Server.DefaultN)
 	if err != nil {
 		BadRequest(response, err)
@@ -990,7 +1001,7 @@ func (s *RestServer) getRecommend(request *restful.Request, response *restful.Re
 			return
 		}
 	}
-	results, err := s.Recommend(ctx, response, userId, categories, offset+n, recommenders...)
+	results, err := s.Recommend(ctx, response, userId, sessionId, categories, offset+n, recommenders...)
 	if err != nil {
 		InternalServerError(response, err)
 		return
@@ -999,21 +1010,18 @@ func (s *RestServer) getRecommend(request *restful.Request, response *restful.Re
 	// write back
 	if writeBackFeedback != "" {
 		startTime := time.Now()
+		var feedbacks = make([]data.Feedback, 0, len(results))
 		for _, itemId := range results {
 			// insert to data store
 			feedback := data.Feedback{
-				FeedbackKey: data.FeedbackKey{
-					UserId:       userId,
-					ItemId:       itemId,
-					FeedbackType: writeBackFeedback,
-				},
-				Timestamp: startTime.Add(writeBackDelay),
-			}
-			err = s.DataClient.BatchInsertFeedback(ctx, []data.Feedback{feedback}, false, false, false)
-			if err != nil {
-				InternalServerError(response, err)
-				return
-			}
+				FeedbackKey: data.FeedbackKey{UserId: userId, ItemId: itemId, FeedbackType: writeBackFeedback},
+				Timestamp:   startTime.Add(writeBackDelay)}
+			feedbacks = append(feedbacks, feedback)
+		}
+		err = s.DataClient.BatchInsertFeedback(ctx, feedbacks, false, false, false)
+		if err != nil {
+			InternalServerError(response, err)
+			return
 		}
 	}
 	// Send result
@@ -1633,6 +1641,7 @@ func (s *RestServer) deleteItemCategory(request *restful.Request, response *rest
 // Feedback is the data structure for the feedback but stores the timestamp using string.
 type Feedback struct {
 	data.FeedbackKey
+	SessionId string `mapstructure:"session_id"`
 	Timestamp string
 	Comment   string
 }

@@ -534,7 +534,37 @@ func (db *MongoDB) GetUserFeedback(ctx context.Context, userId string, endTime *
 	return feedbacks, nil
 }
 
-// BatchInsertFeedback returns multiple feedback into MongoDB.
+// GetUserFeedback returns feedback of a user from MongoDB. TODO
+func (db *MongoDB) GetUserFeedbackWithSession(ctx context.Context, userId, sessionId string, endTime *time.Time, feedbackTypes ...string) ([]Feedback, error) {
+	c := db.client.Database(db.dbName).Collection(db.FeedbackTable())
+	var r *mongo.Cursor
+	var err error
+	filter := bson.M{
+		"feedbackkey.userid": bson.M{"$eq": userId},
+	}
+	if endTime != nil {
+		filter["timestamp"] = bson.M{"$lte": endTime}
+	}
+	if len(feedbackTypes) > 0 {
+		filter["feedbackkey.feedbacktype"] = bson.M{"$in": feedbackTypes}
+	}
+	r, err = c.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	feedbacks := make([]Feedback, 0)
+	defer r.Close(ctx)
+	for r.Next(ctx) {
+		var feedback Feedback
+		if err = r.Decode(&feedback); err != nil {
+			return nil, err
+		}
+		feedbacks = append(feedbacks, feedback)
+	}
+	return feedbacks, nil
+}
+
+// BatchInsertFeedback returns multiple feedback into MongoDB. TODO
 func (db *MongoDB) BatchInsertFeedback(ctx context.Context, feedback []Feedback, insertUser, insertItem, overwrite bool) error {
 	// skip empty list
 	if len(feedback) == 0 {

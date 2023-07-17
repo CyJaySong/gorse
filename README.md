@@ -109,7 +109,7 @@ In addition, the administrator can perform system monitoring, data import and ex
 ## Contributors
 
 <a href="https://github.com/zhenghaoz/gorse/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=zhenghaoz/gorse" />
+  <img src="https://contrib.rocks/image?repo=gorse-io/gorse" />
 </a>
 
 Any contribution is appreciated: report a bug, give advice or create a pull request. Read [CONTRIBUTING.md](CONTRIBUTING.md) for more information.

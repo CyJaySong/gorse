@@ -116,6 +116,7 @@ type DataSourceConfig struct {
 	PositiveFeedbackTypes []string `mapstructure:"positive_feedback_types"`                // positive feedback type
 	ReadFeedbackTypes     []string `mapstructure:"read_feedback_types"`                    // feedback type for read event
 	PositiveFeedbackTTL   uint     `mapstructure:"positive_feedback_ttl" validate:"gte=0"` // time-to-live of positive feedbacks
+	ReadFeedbackTTL       uint     `mapstructure:"read_feedback_ttl" validate:"gte=0"`     // time-to-live of read feedbacks
 	ItemTTL               uint     `mapstructure:"item_ttl" validate:"gte=0"`              // item-to-live of items
 }
 

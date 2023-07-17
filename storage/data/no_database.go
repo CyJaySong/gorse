@@ -119,6 +119,11 @@ func (NoDatabase) GetUserFeedback(_ context.Context, _ string, _ *time.Time, _ .
 	return nil, ErrNoDatabase
 }
 
+// GetUserFeedback method of NoDatabase returns ErrNoDatabase.
+func (NoDatabase) GetUserFeedbackWithSession(_ context.Context, _, _ string, _ *time.Time, _ ...string) ([]Feedback, error) {
+	return nil, ErrNoDatabase
+}
+
 // GetUserItemFeedback method of NoDatabase returns ErrNoDatabase.
 func (NoDatabase) GetUserItemFeedback(_ context.Context, _, _ string, _ ...string) ([]Feedback, error) {
 	return nil, ErrNoDatabase

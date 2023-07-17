@@ -122,6 +122,10 @@ func (tp TablePrefix) FeedbackTable() string {
 	return string(tp) + "feedback"
 }
 
+func (tp TablePrefix) UserSessionFeedbackTable() string {
+	return string(tp) + "user_session_feedback"
+}
+
 func (tp TablePrefix) Key(key string) string {
 	return string(tp) + key
 }
